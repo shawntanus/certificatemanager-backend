@@ -1,0 +1,9 @@
+# dependencies
+target
+config*
+*.log
+README.md
+
+.classpath
+.project
+.settings
