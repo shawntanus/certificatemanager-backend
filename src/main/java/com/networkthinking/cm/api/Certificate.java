@@ -24,10 +24,9 @@ public class Certificate {
     private String privateKey;
     private String publicKey;
     private String caChain;
-
-    public Certificate() {
-        // Jackson deserialization
-    }
+    private String csr;
+    private boolean deleted = false;
+    private boolean renewed = false;
 
     @ObjectId
     @JsonProperty("_id")
@@ -35,32 +34,26 @@ public class Certificate {
         return id;
     }
 
-    @JsonProperty
     public String getCommonName() {
         return commonName;
     }
 
-    @JsonProperty
     public String getServer() {
         return server;
     }
 
-    @JsonProperty
     public Date getExpirationDate() {
         return expirationDate;
     }
 
-    @JsonProperty
     public String getPrivateKey() {
         return privateKey;
     }
 
-    @JsonProperty
     public String getPublicKey() {
         return publicKey;
     }
 
-    @JsonProperty
     public String getCaChain() {
         return caChain;
     }
@@ -94,5 +87,30 @@ public class Certificate {
     public void setCaChain(String caChain) {
         this.caChain = caChain;
     }
+
+	public String getCsr() {
+		return csr;
+	}
+
+	public boolean isDeleted() {
+		return deleted;
+	}
+
+	public boolean isRenewed() {
+		return renewed;
+	}
+
+	public void setCsr(String csr) {
+		this.csr = csr;
+	}
+
+	public void setDeleted(boolean deleted) {
+		this.deleted = deleted;
+	}
+
+	public void setRenewed(boolean renewed) {
+		this.renewed = renewed;
+	}
+    
     
 }

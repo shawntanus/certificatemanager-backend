@@ -28,6 +28,7 @@ import javax.ws.rs.core.StreamingOutput;
 import org.mongojack.DBCursor;
 import org.mongojack.DBQuery;
 import org.mongojack.JacksonDBCollection;
+import org.mongojack.WriteResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,7 +52,7 @@ public class CertificateResource {
     @Timed
     @Path("/list")
     public List<Certificate> query() {
-        DBCursor<Certificate> dbCursor = collection.find();
+        DBCursor<Certificate> dbCursor = collection.find().in("deleted", null, false).in("renewed", null, false).exists("publicKey");
         List<Certificate> certificates = new ArrayList<>();
         while (dbCursor.hasNext()) {
             certificates.add(dbCursor.next());
@@ -68,29 +69,58 @@ public class CertificateResource {
     }
 
     @POST
+    @Produces(value = MediaType.APPLICATION_JSON)
     @Timed
     @Path("/add/{serverName}")
     public Response add(@PathParam("serverName") String serverName) throws Exception {
         logger.info("Adding server: {}", serverName);
         Certificate newCert = CertificateUtils.getFromServer(serverName);
         logger.info("Got CommonName: {}", newCert.getCommonName());
-        Certificate certificate = collection.findOne(DBQuery.is("publicKey", newCert.getPublicKey()));
-        if (null == certificate) {
-            collection.insert(newCert);
-            return Response.noContent().build();
-        } else {
-            throw new WebApplicationException("This certificate is already imported", Response.Status.NOT_ACCEPTABLE);
-        }
+        
+    	Certificate certificate = collection.findOne(DBQuery.is("publicKey", newCert.getPublicKey()));
+    	if(certificate != null){
+	    	if(!certificate.isDeleted() && !certificate.isRenewed()){
+	    		throw new WebApplicationException("This certificate is already imported", Response.Status.NOT_ACCEPTABLE);
+	    	}else{
+	    		logger.info("This certificate is found in deleted/renewed, restoring");
+	    		certificate.setDeleted(false);
+	    		certificate.setRenewed(false);
+	    		certificate.setServer(newCert.getServer());
+	    		collection.save(certificate);
+	    		demoteCertificateOtherThan(certificate);
+	    	}
+	    	return Response.ok(certificate).build();
+    	}else{
+    		WriteResult<Certificate, String> result = collection.insert(newCert);
+    		demoteCertificateOtherThan(newCert);
+    		return Response.ok(result.getSavedObject()).build();
+    	}
 
     }
-
+    
+    private boolean demoteCertificateOtherThan(Certificate newCert){
+    	boolean demoted = false;
+    	DBCursor<Certificate> dbCursor = collection.find().is("commonName", newCert.getCommonName()).in("deleted", null, false).in("renewed", null, false);
+    	while (dbCursor.hasNext()) {
+        	Certificate certificate = dbCursor.next();
+        	if(certificate.getPublicKey().equals(newCert.getPublicKey()))
+        		continue;
+            certificate.setRenewed(true);
+            logger.info("CommonName: {} ID: {} Expiration: {} got demoted", certificate.getCommonName(), certificate.getId(), certificate.getExpirationDate());
+            collection.save(certificate);
+            demoted = true;
+        }
+    	return demoted;
+    }
+    
     @POST
     @Timed
     @Path("/delete/{id}")
     public Response delete(@PathParam("id") String id) {
         Certificate certificate = findCertificate(id);
         logger.error("Removing certificate CommonName:{} Server:{}", certificate.getCommonName(), certificate.getServer());
-        collection.removeById(id);
+        certificate.setDeleted(true);
+        collection.save(certificate);
         return Response.noContent().build();
     }
 
@@ -106,7 +136,7 @@ public class CertificateResource {
             certificate.setPrivateKey(privateKey);
             collection.save(certificate);
             logger.info("PrivateKey matches");
-            return Response.noContent().build();
+            return Response.ok(certificate).build();
         } else {
             logger.info("PrivateKey doesn't match");
             return Response.status(Response.Status.NOT_ACCEPTABLE).build();
